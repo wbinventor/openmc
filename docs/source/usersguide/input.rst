@@ -99,6 +99,8 @@ default. This element has the following attributes/sub-elements:
 
     *Default*: 1.0
 
+.. _eigenvalue:
+
 ``<eigenvalue>`` Element
 ------------------------
 
@@ -130,6 +132,32 @@ should be performed. It has the following attributes/sub-elements:
 
     *Default*: None
 
+  :keff_trigger:
+    This tag specifies the type of the trigger for the combined :math:`k_{eff}`
+    and threshold of the trigger. It has the following attributes/sub-elements:
+
+    :type:
+      The type of the keff_trigger. Accepted options are "variance", "std_dev",
+      and "rel_err".
+
+     :rel_err:
+       Relative error of the batch mean :math:`\frac{\sigma}{\mu}`
+
+     :std_dev:
+       Standard deviation of the batch mean :math:`\sigma`
+
+     :variance:
+       Variance of the batch mean :math:`\sigma^2`
+
+     *Default*: None
+
+    :threshold:
+      The value of the keff_trigger.
+
+      *Default*: None
+
+    .. note:: See section on the :ref:`trigger` for more information.
+
 ``<energy_grid>`` Element
 -------------------------
 
@@ -160,7 +188,7 @@ problem. It has the following attributes/sub-elements:
 
     *Default*: None
 
-  :upper_right:
+  :upper_right
     The Cartesian coordinates of the upper-right corner of the mesh.
 
     *Default*: None
@@ -168,8 +196,8 @@ problem. It has the following attributes/sub-elements:
 ``<fixed_source>`` Element
 --------------------------
 
-The ``<fixed_source>`` element indicates that a fixed source calculation should be
-performed. It has the following attributes/sub-elements:
+The ``<fixed_source>`` element indicates that a fixed source calculation should
+be performed. It has the following attributes/sub-elements:
 
   :batches:
     The total number of batches. For fixed source calculations, each batch
@@ -240,7 +268,8 @@ out the file and "false" will not.
 
     *Default*: true
 
-  .. note:: The tally results will always be written to a binary/HDF5 state point file.
+  .. note:: The tally results will always be written to a binary/HDF5 state
+            point file.
 
 ``<output_path>`` Element
 -------------------------
@@ -259,6 +288,65 @@ in the unresolved resonance range if available. This element has no attributes
 or sub-elements and can be set to either "false" or "true".
 
   *Default*: true
+
+``<resonance_scattering>`` Element
+----------------------
+
+The ``resonance_scattering`` element can contain one or more of the following
+attributes or sub-elements:
+
+  :scatterer:
+    An element with attributes/sub-elements called ``nuclide``, ``method``,
+    ``xs_label``, ``xs_label_0K``, ``E_min``, and ``E_max``. The ``nuclide``
+    attribute is the name, as given by the ``name`` attribute within the 
+    ``nuclide`` sub-element of the ``material`` element in ``materials.xml``,
+    of the nuclide to which a resonance scattering treatment is to be applied.
+    The ``method`` attribute gives the type of resonance scattering treatment
+    that is to be applied to the ``nuclide``.  Acceptable inputs - none of
+    which are case-sensitive - for the ``method`` attribute are ``ARES``,
+    ``CXS``, ``WCM``, and ``DBRC``.  Descriptions of each of these methods
+    are documented here_.  The ``xs_label`` attribute gives the label for the
+    cross section data of the ``nuclide`` at a given temperature.  The
+    ``xs_label_0K`` gives the label for the 0 K cross section data for the
+    ``nuclide``.  The ``E_min`` attribute gives the minimum energy above
+    which the ``method`` is applied.  The ``E_max`` attribute gives the
+    maximum energy below which the ``method`` is applied.  One example would
+    be as follows:
+
+    .. _here: http://dx.doi.org/10.1016/j.anucene.2014.01.017
+
+    .. code-block:: xml
+
+        <resonance_scattering>
+          <scatterer>
+            <nuclide>U-238</nuclide>
+            <method>ARES</method>
+            <xs_label>92238.72c</xs_label>
+            <xs_label_0K>92238.00c</xs_label_0K>
+            <E_min>5.0e-6</E_min>
+            <E_max>40.0e-6</E_max>
+         </scatterer>
+         <scatterer>
+            <nuclide>Pu-239</nuclide>
+            <method>dbrc</method>
+            <xs_label>94239.72c</xs_label>
+            <xs_label_0K>94239.00c</xs_label_0K>
+            <E_min>0.01e-6</E_min>
+            <E_max>210.0e-6</E_max>
+          </scatterer>
+        </resonance_scattering>
+
+    .. note:: If the ``resonance_scattering`` element is not given, the free gas,
+              constant cross section (``cxs``) scattering model, which has
+              historically been used by Monte Carlo codes to sample target
+              velocities, is used to treat the target motion of all nuclides.  If
+              ``resonance_scattering`` is present, the ``cxs`` method is applied
+              below ``E_min`` and the target-at-rest (asymptotic) kernel is used
+              above ``E_max``.  An arbitrary number of ``scatterer`` elements may
+              be specified, each corresponding to a single nuclide at a single
+              temperature.
+
+    *Defaults*: None (scatterer), ARES (method), 0.01 eV (E_min), 1.0 keV (E_max)
 
 ``<run_cmfd>`` Element
 ----------------------
@@ -307,6 +395,12 @@ attributes/sub-elements:
 
     :parameters:
       For a "box" spatial distribution, ``parameters`` should be given as six
+      real numbers, the first three of which specify the lower-left corner of a
+      parallelepiped and the last three of which specify the upper-right
+      corner. Source sites are sampled uniformly through that parallelepiped.
+
+      To filter a "box" spatial distribution by fissionable material, specify
+      "fission" tag instead of "box". The ``parameters`` should be given as six
       real numbers, the first three of which specify the lower-left corner of a
       parallelepiped and the last three of which specify the upper-right
       corner. Source sites are sampled uniformly through that parallelepiped.
@@ -417,8 +511,8 @@ attributes/sub-elements:
     *Default*: None
 
   :separate:
-    If this element is set to "true", a separate binary source point file will be
-    written. Otherwise, the source sites will be written in the state point
+    If this element is set to "true", a separate binary source point file will
+    be written. Otherwise, the source sites will be written in the state point
     directly.
 
     *Default*: false
@@ -473,9 +567,54 @@ integers: the batch number, generation number, and particle number.
 ``<track>`` Element
 -------------------
 
-The ``<track>`` element specifies particles for which OpenMC will output binary files describing particle position at every step of its transport. This element should be followed by triplets of integers.  Each triplet describes one particle.  The integers in each triplet specify the batch number, generation number, and particle number, respectively.
+The ``<track>`` element specifies particles for which OpenMC will output binary
+files describing particle position at every step of its transport. This element
+should be followed by triplets of integers.  Each triplet describes one particle
+. The integers in each triplet specify the batch number, generation number, and
+particle number, respectively.
 
   *Default*: None
+
+.. _trigger:
+
+``<trigger>`` Element
+-------------------------
+
+OpenMC includes tally precision triggers which allow the user to define
+uncertainty thresholds on :math:`k_{eff}` in :ref:`eigenvalue` and/or other
+tallies in :ref:`tally`. When using triggers, OpenMC will run until it
+completes as many batches as are defined by ``<batches>`` . At this point, the
+uncertainties on all tallied values are computed and compared with their
+corresponding trigger thresholds. If any triggers have not been met, OpenMC
+will continue until either 1) all trigger thresholds have been satisfied or
+2) ``<max_batches>`` has been reached.
+
+The ``<trigger>`` element describes the status of the trigger(s) (i.e. whether
+or not to use trigger(s)), the maximum number of batches and the batch interval.
+It has the following attributes/sub-elements:
+
+  :status:
+    This determines whether or not to use trigger(s). Trigger(s) are used when
+    this tag is set to "true".
+
+  :max_batches:
+    This describes the maximum number of batches when using trigger(s).
+
+    .. note:: When max_batches is set, the number of tag ``batches`` shown in
+              ``<eigenvalue>`` element represents minimum number of batches to
+              simulate when using the trigger(s).
+
+  :batch_interval:
+    This tag describes the number of  batches in between convergence checks.
+    OpenMC will check if the trigger has been reached at each batch defined
+    by batch_interval after the minimum number of batches is reached.
+
+    This predictive model assumes no correlation between fission sources
+    distributions from batch-to-batch. This assumption is reasonable for fixed
+    source and small criticality calculations, but is very optimistic for highly
+    coupled full-core reactor problems.
+
+    *Default*: If this tag is not present, the ``batch_interval`` is predicted dynamically by OpenMC for each convergence check.
 
 ``<uniform_fs>`` Element
 ------------------------
@@ -872,6 +1011,8 @@ post-collision energy, and an arbitrary structured mesh.
 The three valid elements in the tallies.xml file are ``<tally>``, ``<mesh>``,
 and ``<assume_separate>``.
 
+.. _tally:
+
 ``<tally>`` Element
 -------------------
 
@@ -894,11 +1035,12 @@ The ``<tally>`` element accepts the following sub-elements:
     The ``filter`` element has the following attributes/sub-elements:
 
       :type:
-        The type of the filter. Accepted options are "cell", "cellborn", "material",
-        "universe", "energy", "energyout", and "mesh".
+        The type of the filter. Accepted options are "cell", "cellborn",
+        "material", "universe", "energy", "energyout", and "mesh".
 
       :bins:
-        For each filter type, the corresponding ``bins`` entry is given as follows:
+        For each filter type, the corresponding ``bins`` entry is given as
+        follows:
 
         :cell:
           A list of cells in which the tally should be accumulated.
@@ -993,20 +1135,20 @@ The ``<tally>`` element accepts the following sub-elements:
 
     :scatter-PN:
       Tally all of the scattering moments from order 0 to N, where N is the
-      Legendre expansion order of the change in particle angle :math:`\left(\mu\right)`.
-      That is, ``scatter-P1`` is equivalent to requesting tallies of
-      ``scatter-0`` and ``scatter-1``.  Like for ``scatter-N``,
-      N must be between 0 and 10. As an example, tallying up to the
-      2\ :sup:`nd` \ scattering moment would be specified as
+      Legendre expansion order of the change in particle angle
+      :math:`\left(\mu\right)`. That is, ``scatter-P1`` is equivalent to
+      requesting tallies of ``scatter-0`` and ``scatter-1``.  Like for
+      ``scatter-N``, N must be between 0 and 10. As an example, tallying up
+      to the 2\ :sup:`nd` \ scattering moment would be specified as
       ``<scores> scatter-P2 </scores>``.
 
     :scatter-YN:
       ``scatter-YN`` is similar to ``scatter-PN`` except an additional
       expansion is performed for the incoming particle direction
-      :math:`\left(\Omega\right)` using the real spherical harmonics.  This is useful
-      for performing angular flux moment weighting of the scattering moments.
-      Like ``scatter-PN``, ``scatter-YN`` will tally all of the moments from
-      order 0 to N; N again must be between 0 and 10.
+      :math:`\left(\Omega\right)` using the real spherical harmonics.  This is
+      useful for performing angular flux moment weighting of the scattering
+      moments. Like ``scatter-PN``, ``scatter-YN`` will tally all of the
+      moments from order 0 to N; N again must be between 0 and 10.
 
     :nu-scatter, nu-scatter-N, nu-scatter-PN, nu-scatter-YN:
       These scores are similar in functionality to their ``scatter*``
@@ -1035,6 +1177,41 @@ The ``<tally>`` element accepts the following sub-elements:
 
     :events:
       Number of scoring events
+
+  :trigger:
+    Trigger applied to all filter bins and nuclides for this tally. It will
+    specify the trigger's type, threshold and scores to which it will be
+    applied. It has the following attributes/sub-elements:
+
+   :type:
+     The type of the trigger. Accepted options are "variance", "std_dev",
+     and "rel_err".
+
+     :variance:
+       Variance of the batch mean :math:`\sigma^2`
+
+     :std_dev:
+       Standard deviation of the batch mean :math:`\sigma`
+
+     :rel_err:
+       Relative error of the batch mean :math:`\frac{\sigma}{\mu}`
+
+     *Default*: None
+
+   :threshold:
+     The value of the trigger for tally.
+
+     *Default*: None
+
+   :scores:
+     The score(s) in this tally to which the trigger should be applied.
+
+     .. note:: The ``scores`` in ``trigger`` must have been defined in
+               ``scores`` in ``tally``. And each trigger just includes a
+               scores. An optional "all" is also allowed. This means all the
+               scores in this tally share the same trigger.
+
+     *Default*: "all"
 
 ``<mesh>`` Element
 ------------------
@@ -1074,8 +1251,8 @@ overhead. The effect of assuming all tallies are spatially separate is that once
 one tally is scored to, the same event is assumed not to score to any other
 tallies. This element should be followed by "true" or "false".
 
-  .. warning:: If used incorrectly, the assumption that all tallies are spatially
-    separate can lead to incorrect results.
+  .. warning:: If used incorrectly, the assumption that all tallies are
+               spatially separate can lead to incorrect results.
 
   *Default*: false
 
@@ -1091,8 +1268,10 @@ element of the plots.xml is simply ``<plots>`` and any number output plots can
 be defined with ``<plot>`` sub-elements.  Two plot types are currently
 implemented in openMC:
 
-* ``slice``  2D pixel plot along one of the major axes. Produces a PPM image file.
-* ``voxel``  3D voxel data dump. Produces a binary file containing voxel xyz position and cell or material id.
+* ``slice``  2D pixel plot along one of the major axes. Produces a PPM image
+  file.
+* ``voxel``  3D voxel data dump. Produces a binary file containing voxel xyz
+  position and cell or material id.
 
 
 ``<plot>`` Element
@@ -1233,17 +1412,17 @@ attributes or sub-elements.  These are not used in "voxel" plots:
 CMFD Specification -- cmfd.xml
 ------------------------------
 
-Coarse mesh finite difference acceleration method has been implemented in OpenMC.
-Currently, it allows users to accelerate fission source convergence during
-inactive neutron batches. To run CMFD, the ``<run_cmfd>`` element in
+Coarse mesh finite difference acceleration method has been implemented in
+OpenMC. Currently, it allows users to accelerate fission source convergence
+during inactive neutron batches. To run CMFD, the ``<run_cmfd>`` element in
 ``settings.xml`` should be set to "true".
 
 ``<active_flush>`` Element
 --------------------------
 
 The ``<active_flush>`` element controls the batch where CMFD tallies should be
-reset. CMFD tallies should be reset before active batches so they are accumulated
-without bias.
+reset. CMFD tallies should be reset before active batches so they are
+accumulated without bias.
 
   *Default*: 0
 
@@ -1259,8 +1438,8 @@ The ``<begin>`` element controls what batch CMFD calculations should begin.
 
 The ``<display>`` element sets one additional CMFD output column. Options are:
 
-* "balance" - prints the RMS [%] of the resdiual from the neutron balance equation
-  on CMFD tallies.
+* "balance" - prints the RMS [%] of the resdiual from the neutron balance
+  equation on CMFD tallies.
 * "dominance" - prints the estimated dominance ratio from the CMFD iterations.
   **This will only work for power iteration eigensolver**.
 * "entropy" - prints the *entropy* of the CMFD predicted fission source.
@@ -1387,8 +1566,8 @@ occur during inactive CMFD batches.
 ``<power_monitor>`` Element
 ---------------------------
 
-The ``<power_monitor>`` element is used to view the convergence of power iteration.
-This option can be turned on with "true" and turned off with "false".
+The ``<power_monitor>`` element is used to view the convergence of power
+iteration. This option can be turned on with "true" and turned off with "false".
 
   *Default*: false
 
@@ -1403,8 +1582,9 @@ calculation be performed on the last batch when CMFD is active.
 ``<snes_monitor>`` Element
 --------------------------
 
-The ``<snes_monitor>`` element is used to view the convergence of the nonlinear SNES
-function in PETSc. This option can be turned on with "true" and turned off with "false".
+The ``<snes_monitor>`` element is used to view the convergence of the nonlinear
+ SNES function in PETSc. This option can be turned on with "true" and turned
+off with "false".
 
 
   *Default*: false
