@@ -548,6 +548,7 @@ def get_openmc_cell(opencsg_cell):
   openmc_cell = openmc.Cell(cell_id, name)
 
   fill = opencsg_cell._fill
+  rot = opencsg_cell._rot
 
   if (opencsg_cell._type == 'universe'):
     openmc_cell.setFill(get_openmc_universe(fill))
@@ -555,6 +556,9 @@ def get_openmc_cell(opencsg_cell):
     openmc_cell.setFill(get_openmc_lattice(fill))
   else:
     openmc_cell.setFill(get_openmc_material(fill))
+
+  if rot:
+    openmc_cell.setRotation(rot)
 
   surfaces = opencsg_cell._surfaces
 
@@ -737,14 +741,20 @@ def get_openmc_lattice(opencsg_lattice):
         universe_id = universes[z][y][x]._id
         universe_array[x][y][z] = unique_universes[universe_id]
 
+  lower_left = np.array(offset, dtype=np.float64) + \
+               ((np.array(width, dtype=np.float64) * \
+                 np.array(dimension, dtype=np.float64))) / -2.0
+
+  # hack for 2d lattices only
+  lower_left = lower_left[0:2]
+  dimension = dimension[0:2]
+  width = width[0:2]
+  universe_array = np.squeeze(universe_array)
+  
   openmc_lattice = openmc.Lattice(lattice_id=lattice_id)
   openmc_lattice.setDimension(dimension)
   openmc_lattice.setWidth(width)
   openmc_lattice.setUniverses(universe_array)
-
-  lower_left = np.array(offset, dtype=np.float64) + \
-               ((np.array(width, dtype=np.float64) * \
-                 np.array(dimension, dtype=np.float64))) / -2.0
   openmc_lattice.setLowerLeft(lower_left)
 
   # Add the OpenMC Lattice to the global collection of all OpenMC Lattices
