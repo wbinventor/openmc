@@ -2904,7 +2904,7 @@ class Tally(object):
         return tally_sum
 
     def average(self, scores=[], filter_type=None,
-                  filter_bins=[], nuclides=[], remove_filter=False):
+                filter_bins=[], nuclides=[], remove_filter=False):
         """Vectorized average of tally data across scores, filter bins and/or
         nuclides using tally aggregation.
 
@@ -3053,6 +3053,153 @@ class Tally(object):
         # If original tally was sparse, sparsify the tally average
         tally_avg.sparse = self.sparse
         return tally_avg
+
+    def median(self, scores=[], filter_type=None,
+               filter_bins=[], nuclides=[], remove_filter=False):
+        """Vectorized median of tally data across scores, filter bins and/or
+        nuclides using tally aggregation.
+
+        This method constructs a new tally to encapsulate the median of the data
+        represented by the median of the data in this tally. The tally data
+        median is determined by the scores, filter bins and nuclides specified
+        in the input parameters.
+
+        Parameters
+        ----------
+        scores : list of str
+            A list of one or more score strings to median across
+            (e.g., ['absorption', 'nu-fission']; default is [])
+        filter_type : str
+            A filter type string (e.g., 'cell', 'energy') corresponding to the
+            filter bins to median across
+        filter_bins : Iterable of Integral or tuple
+            A list of the filter bins corresponding to the filter_type parameter
+            Each bin in the list is the integer ID for 'material', 'surface',
+            'cell', 'cellborn', and 'universe' Filters. Each bin is an integer
+            for the cell instance ID for 'distribcell' Filters. Each bin is a
+            2-tuple of floats for 'energy' and 'energyout' filters corresponding
+            to the energy boundaries of the bin of interest. Each bin is an
+            (x,y,z) 3-tuple for 'mesh' filters corresponding to the mesh cell of
+            interest.
+        nuclides : list of str
+            A list of nuclide name strings to median across
+            (e.g., ['U-235', 'U-238']; default is [])
+        remove_filter : bool
+            If the median is being computed over a filter's bins, this bool
+            indicates whether to remove that filter in the returned tally.
+            Default is False.
+
+        Returns
+        -------
+        Tally
+            A new tally which encapsulates the median of data requested.
+        """
+
+        # Create new derived Tally for median
+        tally_med = Tally()
+        tally_med._derived = True
+        tally_med._estimator = self.estimator
+        tally_med._num_realizations = self.num_realizations
+        tally_med._with_batch_statistics = self.with_batch_statistics
+        tally_med._with_summary = self.with_summary
+        tally_med._sp_filename = self._sp_filename
+        tally_med._results_read = self._results_read
+
+        # Get tally data arrays reshaped with one dimension per filter
+        mean = self.get_reshaped_data(value='mean')
+        std_dev = self.get_reshaped_data(value='std_dev')
+
+        # Sum across any filter bins specified by the user
+        if filter_type in _FILTER_TYPES:
+            find_filter = self.find_filter(filter_type)
+
+            # If user did not specify filter bins, find median across all bins
+            if len(filter_bins) == 0:
+                bin_indices = np.arange(find_filter.num_bins)
+
+                if filter_type == 'distribcell':
+                    filter_bins = np.arange(find_filter.num_bins)
+                else:
+                    num_bins = find_filter.num_bins
+                    filter_bins = \
+                        [(find_filter.get_bin(i)) for i in range(num_bins)]
+
+            # Only find median across bins specified by the user
+            else:
+                bin_indices = \
+                    [find_filter.get_bin_index(bin) for bin in filter_bins]
+
+            # Sum across the bins in the user-specified filter
+            for i, self_filter in enumerate(self.filters):
+                if self_filter.type == filter_type:
+                    mean = np.take(mean, indices=bin_indices, axis=i)
+                    std_dev = np.std(mean, axis=i)
+                    std_dev *= 1.253 / np.sqrt(len(bin_indices))
+                    mean = np.median(mean, axis=i, keepdims=True)
+
+                    # Add AggregateFilter to the tally median
+                    if not remove_filter:
+                        filter_med = \
+                            AggregateFilter(self_filter, filter_bins, 'median')
+                        tally_med.add_filter(filter_med)
+
+                # Add a copy of each filter not included to the tally median
+                else:
+                    tally_med.add_filter(copy.deepcopy(self_filter))
+
+        # Add a copy of this tally's filters to the tally median
+        else:
+            tally_med._filters = copy.deepcopy(self.filters)
+
+        # Sum across any nuclides specified by the user
+        if len(nuclides) != 0:
+            nuclide_bins = [self.get_nuclide_index(nuclide) for nuclide in nuclides]
+            axis_index = self.num_filters
+            mean = np.take(mean, indices=nuclide_bins, axis=axis_index)
+            std_dev = np.std(mean, axis=axis_index)
+            std_dev *= 1.253 / np.sqrt(len(nuclide_bins))
+            mean = np.median(mean, axis=axis_index, keepdims=True)
+
+
+            # Add AggregateNuclide to the tally median
+            nuclide_med = AggregateNuclide(nuclides, 'median')
+            tally_med.add_nuclide(nuclide_med)
+
+        # Add a copy of this tally's nuclides to the tally median
+        else:
+            tally_med._nuclides = copy.deepcopy(self.nuclides)
+
+        # Sum across any scores specified by the user
+        if len(scores) != 0:
+            score_bins = [self.get_score_index(score) for score in scores]
+            axis_index = self.num_filters + 1
+            mean = np.take(mean, indices=score_bins, axis=axis_index)
+            std_dev = np.std(mean, axis=axis_index)
+            std_dev *= 1.253 / np.sqrt(len(score_bins))
+            mean = np.median(mean, axis=axis_index, keepdims=True)
+
+            # Add AggregateScore to the tally median
+            score_med = AggregateScore(scores, 'median')
+            tally_med.add_score(score_med)
+
+        # Add a copy of this tally's scores to the tally median
+        else:
+            tally_med._scores = copy.deepcopy(self.scores)
+
+        # Update the tally median's filter strides
+        tally_med._update_filter_strides()
+
+        # Reshape condensed data arrays with one dimension for all filters
+        mean = np.reshape(mean, tally_med.shape)
+        std_dev = np.reshape(std_dev, tally_med.shape)
+
+        # Assign tally median's data with the new arrays
+        tally_med._mean = mean
+        tally_med._std_dev = std_dev
+
+        # If original tally was sparse, sparsify the tally median
+        tally_med.sparse = self.sparse
+        return tally_med
 
     def diagonalize_filter(self, new_filter):
         """Diagonalize the tally data array along a new axis of filter bins.

@@ -13,7 +13,7 @@ if sys.version_info[0] >= 3:
     basestring = str
 
 # Acceptable tally aggregation operations
-_TALLY_AGGREGATE_OPS = ['sum', 'avg']
+_TALLY_AGGREGATE_OPS = ['sum', 'avg', 'median']
 
 
 class AggregateScore(object):
