@@ -16,7 +16,7 @@ if sys.version_info[0] >= 3:
 _TALLY_ARITHMETIC_OPS = ['+', '-', '*', '/', '^']
 
 # Acceptable tally aggregation operations
-_TALLY_AGGREGATE_OPS = ['sum', 'avg']
+_TALLY_AGGREGATE_OPS = ['sum', 'avg', 'med']
 
 
 class CrossScore(object):
