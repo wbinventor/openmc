@@ -74,6 +74,10 @@ scripts/G4EMLOW*/
 .idea
 .idea/*
 
+# Visual Studio Code project configuration files
+.vscode
+*.code-workspace
+
 # IPython notebook checkpoints
 .ipynb_checkpoints
 

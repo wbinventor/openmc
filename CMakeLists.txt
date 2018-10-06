@@ -442,6 +442,7 @@ add_library(libopenmc SHARED
   src/summary.cpp
   src/surface.cpp
   src/thermal.cpp
+  src/volume_calc.cpp
   src/xml_interface.cpp
   src/xsdata.cpp)
 
