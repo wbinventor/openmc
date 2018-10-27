@@ -37,7 +37,6 @@ module openmc_api
 
   private
   public :: openmc_calculate_volumes
-  public :: openmc_cell_filter_get_bins
   public :: openmc_cell_get_id
   public :: openmc_cell_set_id
   public :: openmc_energy_filter_get_bins
@@ -71,10 +70,6 @@ module openmc_api
   public :: openmc_material_set_density
   public :: openmc_material_set_densities
   public :: openmc_material_set_id
-  public :: openmc_material_filter_get_bins
-  public :: openmc_material_filter_set_bins
-  public :: openmc_mesh_filter_set_mesh
-  public :: openmc_meshsurface_filter_set_mesh
   public :: openmc_next_batch
   public :: openmc_nuclide_name
   public :: openmc_plot_geometry
@@ -181,7 +176,6 @@ contains
     err = 0
 #ifdef OPENMC_MPI
     ! Free all MPI types
-    call MPI_TYPE_FREE(MPI_BANK, err)
     call openmc_free_bank()
 #endif
 
@@ -277,14 +271,12 @@ contains
     call time_initialize % reset()
     call time_read_xs % reset()
     call time_unionize % reset()
-    call time_bank % reset()
-    call time_bank_sample % reset()
-    call time_bank_sendrecv % reset()
     call time_tallies % reset()
     call time_inactive % reset()
     call time_active % reset()
     call time_transport % reset()
     call time_finalize % reset()
+    call reset_timers()
 
     err = 0
   end function openmc_reset
