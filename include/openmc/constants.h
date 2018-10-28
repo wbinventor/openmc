@@ -11,6 +11,10 @@
 
 namespace openmc {
 
+using int_2dvec = std::vector<std::vector<int>>;
+using int_3dvec = std::vector<std::vector<std::vector<int>>>;
+using int_4dvec = std::vector<std::vector<std::vector<std::vector<int>>>>;
+
 using double_2dvec = std::vector<std::vector<double>>;
 using double_3dvec = std::vector<std::vector<std::vector<double>>>;
 using double_4dvec = std::vector<std::vector<std::vector<std::vector<double>>>>;

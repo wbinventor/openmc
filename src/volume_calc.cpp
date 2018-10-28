@@ -50,15 +50,85 @@ void VolumeCalculation::check_hit(int domain, int material) {
 
 
 void VolumeCalculation::calculate_volumes(
-    openmc::double_2dvec volumes, std::vector<int> i_nuclides,
-    std::vector<double> n_atoms, std::vector<double> n_atoms_uncertainty) {
+    openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
+    openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty) {
   return;
 }
 
 void VolumeCalculation::write_volume(
-  std::string filename, openmc::double_2dvec volumes, std::vector<int> i_nuclides,
-  std::vector<double> n_atoms, std::vector<double> n_atoms_uncertainty) {
-  return;
+  std::string filename, openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
+  openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty) {
+
+  int i, j;
+  int n;
+  hid_t file_id;
+  hid_t group_id;
+  openmc::double_2dvec atom_data;  // mean/stdev of total # of atoms for each nuclide
+  std::vector<std::string> nucnames;  // names of nuclides
+
+  // Create HDF5 file
+  file_id = file_open(filename, 'w');
+
+  // Write header info
+  write_attribute(fild_id, "filetype", "volume");
+  write_attribute(file_id, "version", VERSION_VOLUME);
+  write_attribute(file_id, "openmc_version", VERSION);
+#ifdef GIT_SHA1
+  write_attribute(file_id, "git_sha1", GIT_SHA1);
+#endif
+
+  // Write current date and time
+  // FIXME: Will this work -- time_stamp is a FORTRAN routine in output.F90???
+  write_attribute(file_id, "date_and_time", time_stamp());
+
+  // Write basic metadata
+  write_attribute(file_id, "n_samples", this->n_samples);
+  write_attribute(file_id, "lower_left", this->lower_left);
+  write_attribute(file_id, "upper_right", this->upper_right);
+  if (this->domain_type == FILTER_CELL) {
+    write_attribute(file_id, "domain_type", "cell");
+  }
+  else if (this->domain_type == FILTER_MATERIAL) {
+    write_attribute(file_id, "domain_type", "material");
+  }
+  else if (this->domain_type == FILTER_UNIVERSE) {
+    write_attribute(file_id, "domain_type", "universe");
+  }
+
+  for (int i=0; i < this->domain_ids.size(); i++)
+  {
+    group_id = create_group(file_id, "domain_" + std::to_string(this->domain_ids[i]));
+
+    // Write volume for domain
+    // FIXME: openmc::double_2dvec won't allow for index slicing; maybe use xtensor??
+    write_dataset(group_id, "volume", volumes[:,i]);
+
+    // Create array of nuclide names from the vector
+    n = i_nuclides[i];
+    if (n > 0) {
+      nucnames.resize(n);
+      for (int j=0; j < n; j++) {
+        // NOTE: i_nuclides is a 2d array indexed by domain id and nuclide number
+        // i.e., each nuclide in each domain for a specific volume calculation
+        nucnames[j] = nuclides[i_nuclides[i]][j].name;
+      }
+
+      // Create array of total # of atoms with uncertainty for each nuclide
+      atom_data.push_back(atoms_vec[i]);
+      atom_data.push_back(uncertainty_vec[i]);
+
+      // Write results
+      write_dataset(group_id, "nuclides", nucnames);
+      write_dataset(group_id, "atoms", atom_data);
+
+      nucnames.clear();
+      atom_data.clear();
+    }
+
+    close_group(group_id);
+  }
+
+  file_close(file_id);
 }
 
 

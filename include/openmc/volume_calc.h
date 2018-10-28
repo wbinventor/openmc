@@ -50,11 +50,11 @@ public:
 
   void set_domain_type(int domain_type);
   void calculate_volumes(
-      openmc::double_2dvec volumes, std::vector<int> i_nuclides,
-      std::vector<double> n_atoms, std::vector<double> n_atoms_uncertainty);
+      openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
+      openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty);
   void write_volume(
-    std::string filename, openmc::double_2dvec volumes, std::vector<int> i_nuclides,
-    std::vector<double> n_atoms, std::vector<double> n_atoms_uncertainty);
+    std::string filename, openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
+    openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty);
 
 };
 
