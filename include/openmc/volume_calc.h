@@ -45,9 +45,9 @@ public:
   std::vector<double> uncertainty_vec;
   */
 
-  // FIXME: This may ned to take more parameters...
-  void check_hit(int domain, int material);
-
+  void check_hit(
+    int i_domain, int i_material, openmc::int_2dvec indices,
+    openmc::int_2dvec hits, std::vector<int> n_mat);
   void set_domain_type(int domain_type);
   void calculate_volumes(
       openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
