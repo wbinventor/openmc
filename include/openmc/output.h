@@ -4,6 +4,9 @@
 #ifndef OPENMC_OUTPUT_H
 #define OPENMC_OUTPUT_H
 
+#include <cstring>  // for strlen
+#include <string>
+
 
 namespace openmc {
 
@@ -15,6 +18,8 @@ namespace openmc {
 //==============================================================================
 
 void header(const char* msg, int level);
+
+std::string time_stamp();
 
 //==============================================================================
 //! Display information regarding cell overlap checking.

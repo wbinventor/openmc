@@ -5,7 +5,9 @@
 #define OPENMC_NUCLIDE_H
 
 #include <array>
+#include <vector>
 
+#include "pugixml.hpp"
 #include "openmc/constants.h"
 
 namespace openmc {
@@ -14,10 +16,31 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
+class Nuclide;
+extern std::vector<Nuclide*> nuclides;
+
 // Minimum/maximum transport energy for each particle type. Order corresponds to
 // that of the ParticleType enum
 extern std::array<double, 2> energy_min;
 extern std::array<double, 2> energy_max;
+
+
+class Nuclide
+{
+public:
+  std::string name_;      // name of nuclide, e.g., U235
+  int32_t Z_;             // atomic number
+  int32_t A_;             // mass number
+  int32_t metastable_;    // metastable state
+  double awr_;            // Atomic Weight Ratio
+  int32_t i_nuclide;      // The nuclides index in the nuclides array
+
+  Nuclide() {};
+
+  explicit Nuclide(pugi::xml_node nuclide_node);
+
+}
+
 
 //===============================================================================
 //! Cached microscopic cross sections for a particular nuclide at the current

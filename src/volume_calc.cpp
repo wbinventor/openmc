@@ -81,7 +81,7 @@ void VolumeCalculation::calculate_volumes(
   openmc::int_2dvec indices;  // List of material indices for each domain
   openmc::int_2dvec hits;      // Number of hits for each material in each domain
   bool found_cell;
-  openmc::Particle p;
+  openmc::Particle* p;
 
   // Shared variables
   long int i_start, i_end;    // Starting/ending sample for each process
@@ -110,21 +110,20 @@ void VolumeCalculation::calculate_volumes(
   // FIXME: Do I need to define an interface for MPI's send_int and recv_int routines???
 
   // Divide work over MPI processes
-  min_samples = this->n_samples / n_procs;
-  remainder = this->n_samples % n_procs;
-  if (rank < remainder) {
-    i_start = (min_samples + 1) * rank;
+  min_samples = this->n_samples / openmc::mpi::n_procs;
+  remainder = this->n_samples % openmc::mpi::n_procs;
+  if (openmc::mpi::rank < remainder) {
+    i_start = (min_samples + 1) * openmc::mpi::rank;
     i_end = i_start + min_samples;
   }
   else {
-    i_start = (min_samples + 1) * remainder + (rank - remainder) * min_samples;
+    i_start = (min_samples + 1) * remainder + (openmc::mpi::rank - remainder) * min_samples;
     i_end = i_start + min_samples - 1;
   }
 
   particle_initialize(p);
 
-#pragma omp parallel private(i, j, k, i_domain, i_material, level, found_cell, 
-  indices, hits, n_mat) firstprivate(p)
+#pragma omp parallel private(i_material, found_cell, indices, hits, n_mat) firstprivate(p)
 
   // Create space for material indices and number of hits for each
   n_mat.resize(this->domain_ids.size(), 0);
@@ -135,53 +134,56 @@ void VolumeCalculation::calculate_volumes(
     hits[i].resize(8);
   }
 
-  prn_set_stream(STREAM_VOLUME);
+  openmc::prn_set_stream(openmc::STREAM_VOLUME);
 
   // Samples locations and count hits
 
 #pragma omp for
-  for (long int i=0; i < i_start; i < i_end) {
-    set_particle_seed(i);
+  for (long int i=i_start; i < i_end; i++) {
+    openmc::set_particle_seed(i);
 
-    p.n_coord = 1;
-    p.coord[0].xyz[0] = this->lower_left[0] + prn() * 
+    p->n_coord = 1;
+    p->coord[0].xyz[0] = this->lower_left[0] + openmc::prn() * 
       (this->upper_right[0] - this->lower_left[0]);
-    p.coord[0].xyz[1] = this->lower_left[1] + prn() * 
+    p->coord[0].xyz[1] = this->lower_left[1] + openmc::prn() * 
       (this->upper_right[1] - this->lower_left[1]);
-    p.coord[0].xyz[2] = this->lower_left[2] + prn() * 
+    p->coord[0].xyz[2] = this->lower_left[2] + openmc::prn() * 
       (this->upper_right[2] - this->lower_left[2]);
-    p.coord[0].uvw = {0.5, 0.5, 0.5};
+    p->coord[0].uvw[0] = 0.5;
+    p->coord[1].uvw[1] = 0.5;
+    p->coord[2].uvw[2] = 0.5;
 
     // If this location is not in the geometry at all, move on to next block
     found_cell = find_cell(p, 0);
-    if (!found_cell)
-      continue
+    if (!found_cell) {
+      continue;
+    }
 
-    if (this->domain_type == FILTER_MATERIAL) {
-      i_material = p.material;
-      if (i_material != MATERIAL_VOID) {
+    if (this->domain_type == openmc::FILTER_MATERIAL) {
+      i_material = p->material;
+      if (i_material != openmc::MATERIAL_VOID) {
         for (int i_domain=0; i_domain < this->domain_ids.size(); i_domain++) {
-          if (materials[i_material].id == this->domain_ids[i_domain]) {
+          if (openmc::materials[i_material]->id_ == this->domain_ids[i_domain]) {
             check_hit(i_domain, i_material, indices, hits, n_mat);
           }
         }
       }
     }
-    else if (this->domain_type == FILTER_CELL) {
-      for (int level=0; level < p.n_coord; level++) {
+    else if (this->domain_type == openmc::FILTER_CELL) {
+      for (int level=0; level < p->n_coord; level++) {
         for (int i_domain=0; i_domain < this->domain_ids.size(); i_domain++) {
-          if (cells[p.coord[level].cell + 1].id == this->domain_ids[i_domain]) {
-            i_material = p.material;
+          if (cells[p->coord[level].cell + 1].id == this->domain_ids[i_domain]) {
+            i_material = p->material;
             check_hit(i_domain, i_material, indices, hits, n_mat);
           }
         }
       }
     }
-    else if (this->domain_type == FILTER_UNIVERSE) {
-      for (int level=0; level < p.n_coord; level++) {
+    else if (this->domain_type == openmc::FILTER_UNIVERSE) {
+      for (int level=0; level < p->n_coord; level++) {
         for (int i_domain=0; i_domain < this->domain_ids.size(); i_domain++) {
-          if (universe_id[p.coord[level]].universe == this.domain_ids[i_domain]) {
-            i_material = p.material;
+          if (universe_id[p->coord[level]].universe == this->domain_ids[i_domain]) {
+            i_material = p->material;
             check_hit(i_domain, i_material, indices, hits, n_mat);
           }
         }
@@ -209,7 +211,7 @@ void VolumeCalculation::calculate_volumes(
         }
         // If we made it here, the material hasn't yet been added to the master
         // list, so add entries to the master indices and master hits lists
-        master_indices[i_domain].push_back(indice[i_domain][j]);
+        master_indices[i_domain].push_back(indices[i_domain][j]);
         master_hits[i_domain].push_back(hits[i_domain][j]);
       }
     }
@@ -223,23 +225,23 @@ void VolumeCalculation::calculate_volumes(
   }
 #endif
 
-  prn_set_stream(STREAM_TRACKING)
+  openmc::prn_set_stream(openmc::STREAM_TRACKING);
 
   // Reduce hits onto master process
 
   volume_sample = 1.;
   for (int i=0; i < 3; i++) {
-    volume_sample *= (this->upper_right[i] - this->lower_left[j]);
+    volume_sample *= (this->upper_right[i] - this->lower_left[i]);
   }
 
   for (int i_domain=0; i_domain < this->domain_ids.size(); i_domain++) {
     std::fill(atoms[0].begin(), atoms[0].end(), 0.);
-    std::fill(atom[1].begin(), atoms[1].end(), 0.);
+    std::fill(atoms[1].begin(), atoms[1].end(), 0.);
     total_hits = 0;
 
-    if (master) {
+    if (openmc::mpi::master) {
 #ifdef OPENMC_MPI
-      for (int j=0; j < n_procs - 1; j++) { 
+      for (int j=0; j < openmc::mpi::n_procs - 1; j++) { 
         recv_int(&n, 1, j, 0);
         data.resize(2 * n);
         recv_int(&data[0], 2 * n, j, 1);
@@ -261,25 +263,25 @@ void VolumeCalculation::calculate_volumes(
         var_f = f * (1. - f) / this->n_samples;
 
         i_material = master_indices[i_domain][j];
-        if (i_material == MATERIAL_VOID) {
+        if (i_material == openmc::MATERIAL_VOID) {
           continue;
         }
 
-        Material* mat = materials[i_material];
+        openmc::Material* mat = openmc::materials[i_material];
         // FIXME: Material class does not have a collection of nuclides yet!!
         for (int k=0; k < mat->nuclides.size(); k++) {
           // Accumulate nuclide density
           i_nuclide = mat->nuclides[k];
           atoms[0][i_nuclide] += mat->atom_density[k] * f;
-          atoms[1][i_nuclide] += mat->atom_density[k]**2 * var_f;
+          atoms[1][i_nuclide] += pow(mat->atom_density[k], 2) * var_f;
         }
       }
 
       // Determine volume
-      volumes[0][i_domain] = double(total_hits) / this->n_samples *
+      volumes[i_domain][0] = double(total_hits) / this->n_samples *
         volume_sample;
-      volumes[1][i_domain] = sqrt(volumes[0][i_domain] * (volume_sample - 
-        volume[0][i_domain]) / this->n_samples);
+      volumes[i_domain][1] = sqrt(volumes[i_domain][0] * (volume_sample - 
+        volumes[i_domain][0]) / this->n_samples);
 
       // Determine total number of atoms. At this point, we have values in
       // atoms/b-cm. To get to atoms we multiply by 10^24 V.
@@ -327,44 +329,44 @@ void VolumeCalculation::write_volume(
   std::vector<std::string> nucnames;  // names of nuclides
 
   // Create HDF5 file
-  file_id = file_open(filename, 'w');
+  file_id = openmc::file_open(filename, 'w');
 
   // Write header info
-  write_attribute(fild_id, "filetype", "volume");
-  write_attribute(file_id, "version", VERSION_VOLUME);
-  write_attribute(file_id, "openmc_version", VERSION);
+  openmc::write_attribute(file_id, "filetype", "volume");
+  openmc::write_attribute(file_id, "version", openmc::VERSION_VOLUME);
+  openmc::write_attribute(file_id, "openmc_version", openmc::VERSION);
 #ifdef GIT_SHA1
-  write_attribute(file_id, "git_sha1", GIT_SHA1);
+  openmc::write_attribute(file_id, "git_sha1", GIT_SHA1);
 #endif
 
   // Write current date and time
   // FIXME: Will this work -- time_stamp is a FORTRAN routine in output.F90???
-  write_attribute(file_id, "date_and_time", time_stamp());
+  openmc::write_attribute(file_id, "date_and_time", openmc:: time_stamp());
 
   // Write basic metadata
-  write_attribute(file_id, "n_samples", this->n_samples);
-  write_attribute(file_id, "lower_left", this->lower_left);
-  write_attribute(file_id, "upper_right", this->upper_right);
-  if (this->domain_type == FILTER_CELL) {
-    write_attribute(file_id, "domain_type", "cell");
+  openmc::write_attribute(file_id, "n_samples", this->n_samples);
+  openmc::write_attribute(file_id, "lower_left", this->lower_left);
+  openmc::write_attribute(file_id, "upper_right", this->upper_right);
+  if (this->domain_type == openmc::FILTER_CELL) {
+    openmc::write_attribute(file_id, "domain_type", "cell");
   }
-  else if (this->domain_type == FILTER_MATERIAL) {
-    write_attribute(file_id, "domain_type", "material");
+  else if (this->domain_type == openmc::FILTER_MATERIAL) {
+    openmc::write_attribute(file_id, "domain_type", "material");
   }
-  else if (this->domain_type == FILTER_UNIVERSE) {
-    write_attribute(file_id, "domain_type", "universe");
+  else if (this->domain_type == openmc::FILTER_UNIVERSE) {
+    openmc::write_attribute(file_id, "domain_type", "universe");
   }
 
   for (int i=0; i < this->domain_ids.size(); i++)
   {
-    group_id = create_group(file_id, "domain_" + std::to_string(this->domain_ids[i]));
+    group_id = openmc::create_group(file_id, "domain_" + std::to_string(this->domain_ids[i]));
 
     // Write volume for domain
     // FIXME: openmc::double_2dvec won't allow for index slicing; maybe use xtensor??
-    write_dataset(group_id, "volume", volumes[:,i]);
+    openmc::write_dataset(group_id, "volume", volumes[i]);
 
     // Create array of nuclide names from the vector
-    n = i_nuclides[i];
+    n = i_nuclides[i].size();
     if (n > 0) {
       nucnames.resize(n);
       for (int j=0; j < n; j++) {
@@ -374,21 +376,21 @@ void VolumeCalculation::write_volume(
       }
 
       // Create array of total # of atoms with uncertainty for each nuclide
-      atom_data.push_back(atoms_vec[i]);
-      atom_data.push_back(uncertainty_vec[i]);
+      atom_data.push_back(n_atoms[i]);
+      atom_data.push_back(n_atoms_uncertainty[i]);
 
       // Write results
-      write_dataset(group_id, "nuclides", nucnames);
-      write_dataset(group_id, "atoms", atom_data);
+      openmc::write_dataset(group_id, "nuclides", nucnames);
+      openmc::write_dataset(group_id, "atoms", atom_data);
 
       nucnames.clear();
       atom_data.clear();
     }
 
-    close_group(group_id);
+    openmc::close_group(group_id);
   }
 
-  file_close(file_id);
+  openmc::file_close(file_id);
 }
 
 
@@ -405,9 +407,9 @@ int openmc_calculate_volumes() {
   std::string domain_type;
   std::string filename;    // filename for HDF5 file
   // FIXME: Initialize a timer...but is there one for C++ yet?
-  std::vector<int> i_nuclides;   // indices in nuclides array
-  std::vector<double> n_atoms;   // total # of atoms of each nuclide
-  std::vector<double> n_atoms_uncertainty;  // uncertainty of total # of atoms
+  openmc::int_2dvec i_nuclides;   // indices in nuclides array
+  openmc::double_2dvec n_atoms;   // total # of atoms of each nuclide
+  openmc::double_2dvec n_atoms_uncertainty;  // uncertainty of total # of atoms
 
   // FIXME: Does this work for MPI in C++???
   if (openmc::mpi::master) {
@@ -423,9 +425,10 @@ int openmc_calculate_volumes() {
     n_atoms_uncertainty.resize(n_domains);
 
     // FIXME: This probably won't work for a nested std::vector
-    volumes.resize(2);
-    volumes[0].resize(n_domains);
-    volumes[1].resize(n_domains);
+    volumes.resize(n_domains);
+    for (int j = 0; j < n_domains; j++) {
+      volumes[j].resize(2);
+    }
 
     if (openmc::mpi::master) {
       std::stringstream msg;
@@ -455,7 +458,7 @@ int openmc_calculate_volumes() {
       for (int j = 0; j < volume_calcs[i].domain_ids.size(); j++) {
         std::stringstream msg;
         msg << domain_type << " " << volume_calcs[j].domain_ids[j]
-            << volumes[0][j] << " +/- " << volumes[0][j] << " cm^3";
+            << volumes[j][0] << " +/- " << volumes[j][1] << " cm^3";
         openmc::write_message(msg.str(), 4);
       }
     

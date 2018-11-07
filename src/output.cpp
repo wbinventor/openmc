@@ -1,10 +1,10 @@
 #include "openmc/output.h"
 
 #include <algorithm>  // for std::transform
-#include <cstring>  // for strlen
 #include <iomanip>  // for setw
 #include <iostream>
 #include <sstream>
+#include <time.h>  // for strftime
 
 #include "openmc/cell.h"
 #include "openmc/geometry.h"
@@ -37,6 +37,22 @@ header(const char* msg, int level) {
   if (settings::verbosity >= level) {
     std::cout << out.str() << std::endl << std::endl;
   }
+}
+
+//===============================================================================
+// Returns the current date and time in a formatted string
+
+std::string time_stamp() {
+
+  time_t rawtime;
+  struct tm * timeinfo;
+  char current_time[19];  // ccyy-mm-dd hh:mm:ss
+
+  time (&rawtime);
+  timeinfo = localtime (&rawtime);
+  strftime(current_time, 19, "%C%y-%m-%d %H:%M:%S", timeinfo);
+
+  return std::string(current_time);
 }
 
 //==============================================================================

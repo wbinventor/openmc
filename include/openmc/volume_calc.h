@@ -21,6 +21,7 @@
 #include "openmc/random_lcg.h" // prn, prn_set_stream, set_particle_seed
 #include "openmc/settings.h" // path_output
 #include "openmc/capi.h"  // openmc_get_volumes() declaration
+#include "openmc/output.h"
 // timer_header ???
 
 
@@ -48,14 +49,14 @@ public:
   void check_hit(
     int i_domain, int i_material, openmc::int_2dvec indices,
     openmc::int_2dvec hits, std::vector<int> n_mat);
+
   void set_domain_type(int domain_type);
   void calculate_volumes(
-      openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
-      openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty);
+    openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
+    openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty);
   void write_volume(
     std::string filename, openmc::double_2dvec volumes, openmc::int_2dvec i_nuclides,
     openmc::double_2dvec n_atoms, openmc::double_2dvec n_atoms_uncertainty);
-
 };
 
 
