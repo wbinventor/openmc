@@ -27,7 +27,11 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
+namespace model {
+
 std::vector<SourceDistribution> external_sources;
+
+}
 
 //==============================================================================
 // SourceDistribution implementation
@@ -167,9 +171,9 @@ Bank SourceDistribution::sample() const
       if (space_box) {
         if (space_box->only_fissionable()) {
           // Determine material
-          auto c = cells[cell_index - 1];
+          auto c = model::cells[cell_index - 1];
           int32_t mat_index = c->material_[instance];
-          auto m = materials[mat_index];
+          auto m = model::materials[mat_index];
 
           if (mat_index == MATERIAL_VOID) {
             found = false;
@@ -207,10 +211,10 @@ Bank SourceDistribution::sample() const
   auto energy_ptr = dynamic_cast<Discrete*>(energy_.get());
   if (energy_ptr) {
     auto energies = xt::adapt(energy_ptr->x());
-    if (xt::any(energies > energy_max[p-1])) {
+    if (xt::any(energies > data::energy_max[p-1])) {
       fatal_error("Source energy above range of energies of at least "
                   "one cross section table");
-    } else if (xt::any(energies < energy_min[p-1])) {
+    } else if (xt::any(energies < data::energy_min[p-1])) {
       fatal_error("Source energy below range of energies of at least "
                   "one cross section table");
     }
@@ -221,7 +225,7 @@ Bank SourceDistribution::sample() const
     site.E = energy_->sample();
 
     // Resample if energy falls outside minimum or maximum particle energy
-    if (site.E < energy_max[p-1] && site.E > energy_min[p-1]) break;
+    if (site.E < data::energy_max[p-1] && site.E > data::energy_min[p-1]) break;
   }
 
   // Set delayed group
@@ -292,8 +296,6 @@ void initialize_source()
   }
 }
 
-extern "C" double* rev_energy_bins_ptr();
-
 Bank sample_external_source()
 {
   // Set the random number generator to the source stream.
@@ -301,31 +303,28 @@ Bank sample_external_source()
 
   // Determine total source strength
   double total_strength = 0.0;
-  for (auto& s : external_sources)
+  for (auto& s : model::external_sources)
     total_strength += s.strength();
 
   // Sample from among multiple source distributions
   int i = 0;
-  if (external_sources.size() > 1) {
+  if (model::external_sources.size() > 1) {
     double xi = prn()*total_strength;
     double c = 0.0;
-    for (; i < external_sources.size(); ++i) {
-      c += external_sources[i].strength();
+    for (; i < model::external_sources.size(); ++i) {
+      c += model::external_sources[i].strength();
       if (xi < c) break;
     }
   }
 
   // Sample source site from i-th source distribution
-  Bank site {external_sources[i].sample()};
+  Bank site {model::external_sources[i].sample()};
 
   // If running in MG, convert site % E to group
   if (!settings::run_CE) {
-    // Get pointer to rev_energy_bins array on Fortran side
-    double* rev_energy_bins = rev_energy_bins_ptr();
-
-    int n = num_energy_groups + 1;
-    site.E = lower_bound_index(rev_energy_bins, rev_energy_bins + n, site.E);
-    site.E = num_energy_groups - site.E;
+    site.E = lower_bound_index(data::rev_energy_bins.begin(),
+      data::rev_energy_bins.end(), site.E);
+    site.E = data::num_energy_groups - site.E;
   }
 
   // Set the random number generator back to the tracking stream.
@@ -340,23 +339,19 @@ Bank sample_external_source()
 
 extern "C" void free_memory_source()
 {
-  external_sources.clear();
+  model::external_sources.clear();
 }
 
 extern "C" double total_source_strength()
 {
   double strength = 0.0;
-  for (const auto& s : external_sources) {
+  for (const auto& s : model::external_sources) {
     strength += s.strength();
   }
   return strength;
 }
 
-// Needed in fill_source_bank_fixedsource
-extern "C" int overall_generation();
-
-//! Fill source bank at end of generation for fixed source simulations
-extern "C" void fill_source_bank_fixedsource()
+void fill_source_bank_fixedsource()
 {
   if (settings::path_source.empty()) {
     // Get pointer to source bank

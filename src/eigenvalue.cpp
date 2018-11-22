@@ -1,5 +1,6 @@
 #include "openmc/eigenvalue.h"
 
+#include "xtensor/xbuilder.hpp"
 #include "xtensor/xmath.hpp"
 #include "xtensor/xtensor.hpp"
 #include "xtensor/xview.hpp"
@@ -8,6 +9,7 @@
 #include "openmc/constants.h"
 #include "openmc/error.h"
 #include "openmc/hdf5_interface.h"
+#include "openmc/math_functions.h"
 #include "openmc/mesh.h"
 #include "openmc/message_passing.h"
 #include "openmc/random_lcg.h"
@@ -18,6 +20,8 @@
 #include "openmc/tallies/tally.h"
 
 #include <algorithm> // for min
+#include <array>
+#include <cmath> // for sqrt, abs, pow
 #include <string>
 
 namespace openmc {
@@ -26,9 +30,14 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
+namespace simulation {
+
 double keff_generation;
+std::array<double, 2> k_sum;
 std::vector<double> entropy;
 xt::xtensor<double, 1> source_frac;
+
+} // namespace simulation
 
 //==============================================================================
 // Non-member functions
@@ -39,15 +48,15 @@ void calculate_generation_keff()
   auto gt = global_tallies();
 
   // Get keff for this generation by subtracting off the starting value
-  keff_generation = gt(K_TRACKLENGTH, RESULT_VALUE) - keff_generation;
+  simulation::keff_generation = gt(K_TRACKLENGTH, RESULT_VALUE) - simulation::keff_generation;
 
   double keff_reduced;
 #ifdef OPENMC_MPI
   // Combine values across all processors
-  MPI_Allreduce(&keff_generation, &keff_reduced, 1, MPI_DOUBLE,
+  MPI_Allreduce(&simulation::keff_generation, &keff_reduced, 1, MPI_DOUBLE,
     MPI_SUM, mpi::intracomm);
 #else
-  keff_reduced = keff_generation;
+  keff_reduced = simulation::keff_generation;
 #endif
 
   // Normalize single batch estimate of k
@@ -58,7 +67,7 @@ void calculate_generation_keff()
 
 void synchronize_bank()
 {
-  time_bank.start();
+  simulation::time_bank.start();
 
   // Get pointers to source/fission bank
   Bank* source_bank;
@@ -78,21 +87,21 @@ void synchronize_bank()
 
 #ifdef OPENMC_MPI
   int64_t start = 0;
-  MPI_Exscan(&n_bank, &start, 1, MPI_INT64_T, MPI_SUM, mpi::intracomm);
+  MPI_Exscan(&simulation::n_bank, &start, 1, MPI_INT64_T, MPI_SUM, mpi::intracomm);
 
   // While we would expect the value of start on rank 0 to be 0, the MPI
   // standard says that the receive buffer on rank 0 is undefined and not
   // significant
   if (mpi::rank == 0) start = 0;
 
-  int64_t finish = start + n_bank;
+  int64_t finish = start + simulation::n_bank;
   int64_t total = finish;
   MPI_Bcast(&total, 1, MPI_INT64_T, mpi::n_procs - 1, mpi::intracomm);
 
 #else
   int64_t start  = 0;
-  int64_t finish = n_bank;
-  int64_t total  = n_bank;
+  int64_t finish = simulation::n_bank;
+  int64_t total  = simulation::n_bank;
 #endif
 
   // If there are not that many particles per generation, it's possible that no
@@ -100,7 +109,7 @@ void synchronize_bank()
   // extra logic to treat this circumstance, we really want to ensure the user
   // runs enough particles to avoid this in the first place.
 
-  if (n_bank == 0) {
+  if (simulation::n_bank == 0) {
     fatal_error("No fission sites banked on MPI rank " + std::to_string(mpi::rank));
   }
 
@@ -122,16 +131,16 @@ void synchronize_bank()
   }
   double p_sample = static_cast<double>(sites_needed) / total;
 
-  time_bank_sample.start();
+  simulation::time_bank_sample.start();
 
   // ==========================================================================
   // SAMPLE N_PARTICLES FROM FISSION BANK AND PLACE IN TEMP_SITES
 
   // Allocate temporary source bank
   int64_t index_temp = 0;
-  Bank temp_sites[3*simulation::work];
+  std::vector<Bank> temp_sites(3*simulation::work);
 
-  for (int64_t i = 0; i < n_bank; ++i) {
+  for (int64_t i = 0; i < simulation::n_bank; ++i) {
     // If there are less than n_particles particles banked, automatically add
     // int(n_particles/total) sites to temp_sites. For example, if you need
     // 1000 and 300 were banked, this would add 3 source sites per banked site
@@ -186,7 +195,7 @@ void synchronize_bank()
       // fission bank
       sites_needed = settings::n_particles - finish;
       for (int i = 0; i < sites_needed; ++i) {
-        temp_sites[index_temp] = fission_bank[n_bank - sites_needed + i];
+        temp_sites[index_temp] = fission_bank[simulation::n_bank - sites_needed + i];
         ++index_temp;
       }
     }
@@ -195,8 +204,8 @@ void synchronize_bank()
     finish = simulation::work_index[mpi::rank + 1];
   }
 
-  time_bank_sample.stop();
-  time_bank_sendrecv.start();
+  simulation::time_bank_sample.stop();
+  simulation::time_bank_sendrecv.start();
 
 #ifdef OPENMC_MPI
   // ==========================================================================
@@ -291,17 +300,204 @@ void synchronize_bank()
   MPI_Waitall(n_request, requests.data(), MPI_STATUSES_IGNORE);
 
 #else
-  std::copy(temp_sites, temp_sites + settings::n_particles, source_bank);
+  std::copy(temp_sites.data(), temp_sites.data() + settings::n_particles, source_bank);
 #endif
 
-  time_bank_sendrecv.stop();
-  time_bank.stop();
+  simulation::time_bank_sendrecv.stop();
+  simulation::time_bank.stop();
+}
+
+void calculate_average_keff()
+{
+  // Determine overall generation and number of active generations
+  int i = overall_generation() - 1;
+  int n;
+  if (simulation::current_batch > settings::n_inactive) {
+    n = settings::gen_per_batch*n_realizations + simulation::current_gen;
+  } else {
+    n = 0;
+  }
+
+  if (n <= 0) {
+    // For inactive generations, use current generation k as estimate for next
+    // generation
+    simulation::keff = simulation::k_generation[i];
+  } else {
+    // Sample mean of keff
+    simulation::k_sum[0] += simulation::k_generation[i];
+    simulation::k_sum[1] += std::pow(simulation::k_generation[i], 2);
+
+    // Determine mean
+    simulation::keff = simulation::k_sum[0] / n;
+
+    if (n > 1) {
+      double t_value;
+      if (settings::confidence_intervals) {
+        // Calculate t-value for confidence intervals
+        double alpha = 1.0 - CONFIDENCE_LEVEL;
+        t_value = t_percentile_c(1.0 - alpha/2.0, n - 1);
+      } else {
+        t_value = 1.0;
+      }
+
+      // Standard deviation of the sample mean of k
+      simulation::keff_std = t_value * std::sqrt((simulation::k_sum[1]/n -
+        std::pow(simulation::keff, 2)) / (n - 1));
+    }
+  }
+}
+
+int openmc_get_keff(double* k_combined)
+{
+  k_combined[0] = 0.0;
+  k_combined[1] = 0.0;
+
+  // Make sure we have at least four realizations. Notice that at the end,
+  // there is a N-3 term in a denominator.
+  if (n_realizations <= 3) {
+    return -1;
+  }
+
+  // Initialize variables
+  int64_t n = n_realizations;
+
+  // Copy estimates of k-effective and its variance (not variance of the mean)
+  auto gt = global_tallies();
+
+  std::array<double, 3> kv {};
+  xt::xtensor<double, 2> cov = xt::zeros<double>({3, 3});
+  kv[0] = gt(K_COLLISION, RESULT_SUM) / n;
+  kv[1] = gt(K_ABSORPTION, RESULT_SUM) / n;
+  kv[2] = gt(K_TRACKLENGTH, RESULT_SUM) / n;
+  cov(0, 0) = (gt(K_COLLISION, RESULT_SUM_SQ) - n*kv[0]*kv[0]) / (n - 1);
+  cov(1, 1) = (gt(K_ABSORPTION, RESULT_SUM_SQ) - n*kv[1]*kv[1]) / (n - 1);
+  cov(2, 2) = (gt(K_TRACKLENGTH, RESULT_SUM_SQ) - n*kv[2]*kv[2]) / (n - 1);
+
+  // Calculate covariances based on sums with Bessel's correction
+  cov(0, 1) = (simulation::k_col_abs - n * kv[0] * kv[1]) / (n - 1);
+  cov(0, 2) = (simulation::k_col_tra - n * kv[0] * kv[2]) / (n - 1);
+  cov(1, 2) = (simulation::k_abs_tra - n * kv[1] * kv[2]) / (n - 1);
+  cov(1, 0) = cov(0, 1);
+  cov(2, 0) = cov(0, 2);
+  cov(2, 1) = cov(1, 2);
+
+  // Check to see if two estimators are the same; this is guaranteed to happen
+  // in MG-mode with survival biasing when the collision and absorption
+  // estimators are the same, but can theoretically happen at anytime.
+  // If it does, the standard estimators will produce floating-point
+  // exceptions and an expression specifically derived for the combination of
+  // two estimators (vice three) should be used instead.
+
+  // First we will identify if there are any matching estimators
+  int i, j, k;
+  if ((std::abs(kv[0] - kv[1]) / kv[0] < FP_REL_PRECISION) &&
+      (std::abs(cov(0, 0) - cov(1, 1)) / cov(0, 0) < FP_REL_PRECISION)) {
+    // 0 and 1 match, so only use 0 and 2 in our comparisons
+    i = 0;
+    j = 2;
+
+  } else if ((std::abs(kv[0] - kv[2]) / kv[0] < FP_REL_PRECISION) &&
+             (std::abs(cov(0, 0) - cov(2, 2)) / cov(0, 0) < FP_REL_PRECISION)) {
+    // 0 and 2 match, so only use 0 and 1 in our comparisons
+    i = 0;
+    j = 1;
+
+  } else if ((std::abs(kv[1] - kv[2]) / kv[1] < FP_REL_PRECISION) &&
+             (std::abs(cov(1, 1) - cov(2, 2)) / cov(1, 1) < FP_REL_PRECISION)) {
+    // 1 and 2 match, so only use 0 and 1 in our comparisons
+    i = 0;
+    j = 1;
+
+  } else {
+    // No two estimators match, so set i to -1 and this will be the indicator
+    // to use all three estimators.
+    i = -1;
+  }
+
+  if (i == -1) {
+    // Use three estimators as derived in the paper by Urbatsch
+
+    // Initialize variables
+    double g = 0.0;
+    std::array<double, 3> S {};
+
+    for (int l = 0; l < 3; ++l) {
+      // Permutations of estimates
+      switch (l) {
+      case 0:
+        // i = collision, j = absorption, k = tracklength
+        i = 0;
+        j = 1;
+        k = 2;
+        break;
+      case 1:
+        // i = absortion, j = tracklength, k = collision
+        i = 1;
+        j = 2;
+        k = 0;
+        break;
+      case 2:
+        // i = tracklength, j = collision, k = absorption
+        i = 2;
+        j = 0;
+        k = 1;
+        break;
+      }
+
+      // Calculate weighting
+      double f = cov(j, j) * (cov(k, k) - cov(i, k)) - cov(k, k) * cov(i, j) +
+        cov(j, k) * (cov(i, j) + cov(i, k) - cov(j, k));
+
+      // Add to S sums for variance of combined estimate
+      S[0] += f * cov(0, l);
+      S[1] += (cov(j, j) + cov(k, k) - 2.0 * cov(j, k)) * kv[l] * kv[l];
+      S[2] += (cov(k, k) + cov(i, j) - cov(j, k) - cov(i, k)) * kv[l] * kv[j];
+
+      // Add to sum for combined k-effective
+      k_combined[0] += f * kv[l];
+      g += f;
+    }
+
+    // Complete calculations of S sums
+    for (auto& S_i : S) {
+      S_i *= (n - 1);
+    }
+    S[0] *= (n - 1)*(n - 1);
+
+    // Calculate combined estimate of k-effective
+    k_combined[0] /= g;
+
+    // Calculate standard deviation of combined estimate
+    g *= (n - 1)*(n - 1);
+    k_combined[1] = std::sqrt(S[0] / (g*n*(n - 3)) *
+      (1 + n*((S[1] - 2*S[2]) / g)));
+
+  } else {
+    // Use only two estimators
+    // These equations are derived analogously to that done in the paper by
+    // Urbatsch, but are simpler than for the three estimators case since the
+    // block matrices of the three estimator equations reduces to scalars here
+
+    // Store the commonly used term
+    double f = kv[i] - kv[j];
+    double g = cov(i, i) + cov(j, j) - 2.0*cov(i, j);
+
+    // Calculate combined estimate of k-effective
+    k_combined[0] = kv[i] - (cov(i, i) - cov(i, j)) / g * f;
+
+    // Calculate standard deviation of combined estimate
+    k_combined[1] = (cov(i, i)*cov(j, j) - cov(i, j)*cov(i, j)) *
+          (g + n*f*f) / (n*(n - 2)*g*g);
+    k_combined[1] = std::sqrt(k_combined[1]);
+
+  }
+  return 0;
 }
 
 void shannon_entropy()
 {
   // Get pointer to entropy mesh
-  auto& m = meshes[settings::index_entropy_mesh];
+  auto& m = model::meshes[settings::index_entropy_mesh];
 
   // Get pointer to fission bank
   Bank* fission_bank;
@@ -311,7 +507,7 @@ void shannon_entropy()
   // Get source weight in each mesh bin
   bool sites_outside;
   xt::xtensor<double, 1> p = m->count_sites(
-    n_bank, fission_bank, 0, nullptr, &sites_outside);
+    simulation::n_bank, fission_bank, 0, nullptr, &sites_outside);
 
   // display warning message if there were sites outside entropy box
   if (sites_outside) {
@@ -331,20 +527,20 @@ void shannon_entropy()
     }
 
     // Add value to vector
-    entropy.push_back(H);
+    simulation::entropy.push_back(H);
   }
 }
 
 void ufs_count_sites()
 {
-  auto &m = meshes[settings::index_ufs_mesh];
+  auto &m = model::meshes[settings::index_ufs_mesh];
 
   if (simulation::current_batch == 1 && simulation::current_gen == 1) {
     // On the first generation, just assume that the source is already evenly
     // distributed so that effectively the production of fission sites is not
     // biased
 
-    auto s = xt::view(source_frac, xt::all());
+    auto s = xt::view(simulation::source_frac, xt::all());
     s = m->volume_frac_;
 
   } else {
@@ -355,7 +551,7 @@ void ufs_count_sites()
 
     // count number of source sites in each ufs mesh cell
     bool sites_outside;
-    source_frac = m->count_sites(simulation::work, source_bank, 0, nullptr,
+    simulation::source_frac = m->count_sites(simulation::work, source_bank, 0, nullptr,
       &sites_outside);
 
     // Check for sites outside of the mesh
@@ -366,12 +562,12 @@ void ufs_count_sites()
 #ifdef OPENMC_MPI
     // Send source fraction to all processors
     int n_bins = xt::prod(m->shape_)();
-    MPI_Bcast(source_frac.data(), n_bins, MPI_DOUBLE, 0, mpi::intracomm);
+    MPI_Bcast(simulation::source_frac.data(), n_bins, MPI_DOUBLE, 0, mpi::intracomm);
 #endif
 
     // Normalize to total weight to get fraction of source in each cell
-    double total = xt::sum(source_frac)();
-    source_frac /= total;
+    double total = xt::sum(simulation::source_frac)();
+    simulation::source_frac /= total;
 
     // Since the total starting weight is not equal to n_particles, we need to
     // renormalize the weight of the source sites
@@ -383,7 +579,7 @@ void ufs_count_sites()
 
 double ufs_get_weight(const Particle* p)
 {
-  auto& m = meshes[settings::index_ufs_mesh];
+  auto& m = model::meshes[settings::index_ufs_mesh];
 
   // Determine indices on ufs mesh for current location
   // TODO: off by one
@@ -393,8 +589,8 @@ double ufs_get_weight(const Particle* p)
     fatal_error("Source site outside UFS mesh!");
   }
 
-  if (source_frac(mesh_bin) != 0.0) {
-    return m->volume_frac_ / source_frac(mesh_bin);
+  if (simulation::source_frac(mesh_bin) != 0.0) {
+    return m->volume_frac_ / simulation::source_frac(mesh_bin);
   } else {
     return 1.0;
   }
@@ -406,7 +602,7 @@ extern "C" void write_eigenvalue_hdf5(hid_t group)
   write_dataset(group, "generations_per_batch", settings::gen_per_batch);
   write_dataset(group, "k_generation", simulation::k_generation);
   if (settings::entropy_on) {
-    write_dataset(group, "entropy", entropy);
+    write_dataset(group, "entropy", simulation::entropy);
   }
   write_dataset(group, "k_col_abs", simulation::k_col_abs);
   write_dataset(group, "k_col_tra", simulation::k_col_tra);
@@ -423,22 +619,27 @@ extern "C" void read_eigenvalue_hdf5(hid_t group)
   simulation::k_generation.resize(n);
   read_dataset(group, "k_generation", simulation::k_generation);
   if (settings::entropy_on) {
-    read_dataset(group, "entropy", entropy);
+    read_dataset(group, "entropy", simulation::entropy);
   }
   read_dataset(group, "k_col_abs", simulation::k_col_abs);
   read_dataset(group, "k_col_tra", simulation::k_col_tra);
   read_dataset(group, "k_abs_tra", simulation::k_abs_tra);
 }
 
+//==============================================================================
+// Fortran compatibility
+//==============================================================================
+
 extern "C" double entropy_c(int i)
 {
-  return entropy.at(i - 1);
+  return simulation::entropy.at(i - 1);
 }
 
 extern "C" void entropy_clear()
 {
-  entropy.clear();
+  simulation::entropy.clear();
 }
 
+extern "C" void k_sum_reset() { simulation::k_sum.fill(0.0); }
 
 } // namespace openmc

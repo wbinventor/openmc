@@ -9,13 +9,16 @@
 #include "openmc/tallies/filter_cell.h"
 #include "openmc/tallies/filter_cellborn.h"
 #include "openmc/tallies/filter_cellfrom.h"
+#include "openmc/tallies/filter_delayedgroup.h"
 #include "openmc/tallies/filter_distribcell.h"
 #include "openmc/tallies/filter_energyfunc.h"
+#include "openmc/tallies/filter_energy.h"
 #include "openmc/tallies/filter_legendre.h"
 #include "openmc/tallies/filter_material.h"
 #include "openmc/tallies/filter_mesh.h"
 #include "openmc/tallies/filter_meshsurface.h"
 #include "openmc/tallies/filter_mu.h"
+#include "openmc/tallies/filter_particle.h"
 #include "openmc/tallies/filter_polar.h"
 #include "openmc/tallies/filter_sph_harm.h"
 #include "openmc/tallies/filter_sptl_legendre.h"
@@ -23,6 +26,8 @@
 #include "openmc/tallies/filter_universe.h"
 #include "openmc/tallies/filter_zernike.h"
 
+// explicit template instantiation definition
+template class std::vector<openmc::FilterMatch>;
 
 namespace openmc {
 
@@ -30,8 +35,13 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
+namespace simulation {
 std::vector<FilterMatch> filter_matches;
-std::vector<Filter*> tally_filters;
+} // namespace simulation
+
+namespace model {
+std::vector<std::unique_ptr<Filter>> tally_filters;
+} // namespace model
 
 //==============================================================================
 // Non-member functions
@@ -42,11 +52,10 @@ free_memory_tally_c()
 {
   #pragma omp parallel
   {
-    filter_matches.clear();
+    simulation::filter_matches.clear();
   }
 
-  for (Filter* filt : tally_filters) {delete filt;}
-  tally_filters.clear();
+  model::tally_filters.clear();
 }
 
 //==============================================================================
@@ -54,8 +63,7 @@ free_memory_tally_c()
 //==============================================================================
 
 extern "C" {
-  FilterMatch* filter_match_pointer(int indx)
-  {return &filter_matches[indx];}
+  // filter_match_point moved to simulation.cpp
 
   void
   filter_match_bins_push_back(FilterMatch* match, int val)
@@ -94,45 +102,53 @@ extern "C" {
   {
     std::string type_ {type};
     if (type_ == "azimuthal") {
-      tally_filters.push_back(new AzimuthalFilter());
+      model::tally_filters.push_back(std::make_unique<AzimuthalFilter>());
     } else if (type_ == "cell") {
-      tally_filters.push_back(new CellFilter());
+      model::tally_filters.push_back(std::make_unique<CellFilter>());
     } else if (type_ == "cellborn") {
-      tally_filters.push_back(new CellbornFilter());
+      model::tally_filters.push_back(std::make_unique<CellbornFilter>());
     } else if (type_ == "cellfrom") {
-      tally_filters.push_back(new CellFromFilter());
+      model::tally_filters.push_back(std::make_unique<CellFromFilter>());
     } else if (type_ == "distribcell") {
-      tally_filters.push_back(new DistribcellFilter());
+      model::tally_filters.push_back(std::make_unique<DistribcellFilter>());
+    } else if (type_ == "delayedgroup") {
+      model::tally_filters.push_back(std::make_unique<DelayedGroupFilter>());
     } else if (type_ == "energyfunction") {
-      tally_filters.push_back(new EnergyFunctionFilter());
+      model::tally_filters.push_back(std::make_unique<EnergyFunctionFilter>());
+    } else if (type_ == "energy") {
+      model::tally_filters.push_back(std::make_unique<EnergyFilter>());
+    } else if (type_ == "energyout") {
+      model::tally_filters.push_back(std::make_unique<EnergyoutFilter>());
     } else if (type_ == "legendre") {
-      tally_filters.push_back(new LegendreFilter());
+      model::tally_filters.push_back(std::make_unique<LegendreFilter>());
     } else if (type_ == "material") {
-      tally_filters.push_back(new MaterialFilter());
+      model::tally_filters.push_back(std::make_unique<MaterialFilter>());
     } else if (type_ == "mesh") {
-      tally_filters.push_back(new MeshFilter());
+      model::tally_filters.push_back(std::make_unique<MeshFilter>());
     } else if (type_ == "meshsurface") {
-      tally_filters.push_back(new MeshSurfaceFilter());
+      model::tally_filters.push_back(std::make_unique<MeshSurfaceFilter>());
     } else if (type_ == "mu") {
-      tally_filters.push_back(new MuFilter());
+      model::tally_filters.push_back(std::make_unique<MuFilter>());
+    } else if (type_ == "particle") {
+      model::tally_filters.push_back(std::make_unique<ParticleFilter>());
     } else if (type_ == "polar") {
-      tally_filters.push_back(new PolarFilter());
+      model::tally_filters.push_back(std::make_unique<PolarFilter>());
     } else if (type_ == "surface") {
-      tally_filters.push_back(new SurfaceFilter());
+      model::tally_filters.push_back(std::make_unique<SurfaceFilter>());
     } else if (type_ == "spatiallegendre") {
-      tally_filters.push_back(new SpatialLegendreFilter());
+      model::tally_filters.push_back(std::make_unique<SpatialLegendreFilter>());
     } else if (type_ == "sphericalharmonics") {
-      tally_filters.push_back(new SphericalHarmonicsFilter());
+      model::tally_filters.push_back(std::make_unique<SphericalHarmonicsFilter>());
     } else if (type_ == "universe") {
-      tally_filters.push_back(new UniverseFilter());
+      model::tally_filters.push_back(std::make_unique<UniverseFilter>());
     } else if (type_ == "zernike") {
-      tally_filters.push_back(new ZernikeFilter());
+      model::tally_filters.push_back(std::make_unique<ZernikeFilter>());
     } else if (type_ == "zernikeradial") {
-      tally_filters.push_back(new ZernikeRadialFilter());
+      model::tally_filters.push_back(std::make_unique<ZernikeRadialFilter>());
     } else {
       return nullptr;
     }
-    return tally_filters.back();
+    return model::tally_filters.back().get();
   }
 
   void filter_from_xml(Filter* filt, pugi::xml_node* node)

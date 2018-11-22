@@ -33,10 +33,9 @@ module tracking
   implicit none
 
   interface
-    subroutine collision_mg(p, energy_bin_avg, material_xs) bind(C)
+    subroutine collision_mg(p, material_xs) bind(C)
       import Particle, C_DOUBLE, MaterialMacroXS
       type(Particle),            intent(inout) :: p
-      real(C_DOUBLE),            intent(in)    :: energy_bin_avg(*)
       type(MaterialMacroXS),     intent(in)    :: material_xs
     end subroutine collision_mg
 
@@ -48,7 +47,7 @@ contains
 ! TRANSPORT encompasses the main logic for moving a particle through geometry.
 !===============================================================================
 
-  subroutine transport(p)
+  subroutine transport(p) bind(C)
 
     type(Particle), intent(inout) :: p
 
@@ -235,7 +234,7 @@ contains
         if (run_CE) then
           call collision(p)
         else
-          call collision_mg(p, energy_bin_avg, material_xs)
+          call collision_mg(p, material_xs)
         end if
 
         ! Score collision estimator tallies -- this is done after a collision
@@ -287,8 +286,7 @@ contains
       ! Check for secondary particles if this particle is dead
       if (.not. p % alive) then
         if (p % n_secondary > 0) then
-          call particle_from_source(p, p % secondary_bank(p % n_secondary), &
-                                    run_CE, energy_bin_avg)
+          call particle_from_source(p, p % secondary_bank(p % n_secondary))
           p % n_secondary = p % n_secondary - 1
           n_event = 0
 

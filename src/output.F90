@@ -14,7 +14,6 @@ module output
   use mgxs_interface
   use nuclide_header
   use particle_header, only: LocalCoord, Particle
-  use plot_header
   use sab_header,      only: SAlphaBeta
   use settings
   use simulation_header
@@ -285,7 +284,7 @@ contains
 ! below them
 !===============================================================================
 
-  subroutine print_columns()
+  subroutine print_columns() bind(C)
 
     write(UNIT=ou, FMT='(2X,A9,3X)', ADVANCE='NO') "Bat./Gen."
     write(UNIT=ou, FMT='(A8,3X)', ADVANCE='NO') "   k    "
@@ -323,7 +322,7 @@ contains
 ! PRINT_GENERATION displays information for a generation of neutrons.
 !===============================================================================
 
-  subroutine print_generation()
+  subroutine print_generation() bind(C)
 
     integer :: i  ! overall generation
     integer :: n  ! number of active generations
@@ -360,7 +359,7 @@ contains
 ! multiplication factor as well as the average value if we're in active batches
 !===============================================================================
 
-  subroutine print_batch_keff()
+  subroutine print_batch_keff() bind(C)
 
     integer :: i  ! overall generation
     integer :: n  ! number of active generations
@@ -413,84 +412,11 @@ contains
   end subroutine print_batch_keff
 
 !===============================================================================
-! PRINT_PLOT displays selected options for plotting
-!===============================================================================
-
-  subroutine print_plot()
-
-    integer :: i ! loop index for plots
-    type(ObjectPlot), pointer :: pl
-
-    ! Display header for plotting
-    call header("PLOTTING SUMMARY", 5)
-
-    do i = 1, n_plots
-      pl => plots(i)
-
-      ! Plot id
-      write(ou,100) "Plot ID:", trim(to_str(pl % id))
-
-      ! Plot filename
-      write(ou,100) "Plot file:", trim(pl % path_plot)
-
-      ! Plot level
-      write(ou,100) "Universe depth:", trim(to_str(pl % level))
-
-      ! Plot type
-      if (pl % type == PLOT_TYPE_SLICE) then
-        write(ou,100) "Plot Type:", "Slice"
-      else if (pl % type == PLOT_TYPE_VOXEL) then
-        write(ou,100) "Plot Type:", "Voxel"
-      end if
-
-      ! Plot parameters
-      write(ou,100) "Origin:", trim(to_str(pl % origin(1))) // &
-           " " // trim(to_str(pl % origin(2))) // " " // &
-           trim(to_str(pl % origin(3)))
-      if (pl % type == PLOT_TYPE_SLICE) then
-        write(ou,100) "Width:", trim(to_str(pl % width(1))) // &
-             " " // trim(to_str(pl % width(2)))
-      else if (pl % type == PLOT_TYPE_VOXEL) then
-        write(ou,100) "Width:", trim(to_str(pl % width(1))) // &
-             " " // trim(to_str(pl % width(2))) // &
-             " " // trim(to_str(pl % width(3)))
-      end if
-      if (pl % color_by == PLOT_COLOR_CELLS) then
-        write(ou,100) "Coloring:", "Cells"
-      else if (pl % color_by == PLOT_COLOR_MATS) then
-        write(ou,100) "Coloring:", "Materials"
-      end if
-      if (pl % type == PLOT_TYPE_SLICE) then
-        select case (pl % basis)
-        case (PLOT_BASIS_XY)
-          write(ou,100) "Basis:", "xy"
-        case (PLOT_BASIS_XZ)
-          write(ou,100) "Basis:", "xz"
-        case (PLOT_BASIS_YZ)
-          write(ou,100) "Basis:", "yz"
-        end select
-        write(ou,100) "Pixels:", trim(to_str(pl % pixels(1))) // " " // &
-             trim(to_str(pl % pixels(2)))
-      else if (pl % type == PLOT_TYPE_VOXEL) then
-        write(ou,100) "Voxels:", trim(to_str(pl % pixels(1))) // " " // &
-             trim(to_str(pl % pixels(2))) // " " // trim(to_str(pl % pixels(3)))
-      end if
-
-      write(ou,*)
-
-    end do
-
-    ! Format descriptor for columns
-100 format (1X,A,T25,A)
-
-  end subroutine print_plot
-
-!===============================================================================
 ! PRINT_RUNTIME displays the total time elapsed for the entire run, for
 ! initialization, for computation, and for intergeneration synchronization.
 !===============================================================================
 
-  subroutine print_runtime()
+  subroutine print_runtime() bind(C)
 
     integer       :: n_active
     real(8)       :: speed_inactive  ! # of neutrons/second in inactive batches
@@ -501,49 +427,49 @@ contains
     call header("Timing Statistics", 6)
 
     ! display time elapsed for various sections
-    write(ou,100) "Total time for initialization", time_initialize % elapsed
+    write(ou,100) "Total time for initialization", time_initialize_elapsed()
     write(ou,100) "  Reading cross sections", time_read_xs % elapsed
-    write(ou,100) "Total time in simulation", time_inactive % elapsed + &
-         time_active % elapsed
-    write(ou,100) "  Time in transport only", time_transport % elapsed
+    write(ou,100) "Total time in simulation", time_inactive_elapsed() + &
+         time_active_elapsed()
+    write(ou,100) "  Time in transport only", time_transport_elapsed()
     if (run_mode == MODE_EIGENVALUE) then
-      write(ou,100) "  Time in inactive batches", time_inactive % elapsed
+      write(ou,100) "  Time in inactive batches", time_inactive_elapsed()
     end if
-    write(ou,100) "  Time in active batches", time_active % elapsed
+    write(ou,100) "  Time in active batches", time_active_elapsed()
     if (run_mode == MODE_EIGENVALUE) then
       write(ou,100) "  Time synchronizing fission bank", time_bank_elapsed()
       write(ou,100) "    Sampling source sites", time_bank_sample_elapsed()
       write(ou,100) "    SEND/RECV source sites", time_bank_sendrecv_elapsed()
     end if
-    write(ou,100) "  Time accumulating tallies", time_tallies % elapsed
+    write(ou,100) "  Time accumulating tallies", time_tallies_elapsed()
     if (cmfd_run) write(ou,100) "  Time in CMFD", time_cmfd % elapsed
     if (cmfd_run) write(ou,100) "    Building matrices", &
                   time_cmfdbuild % elapsed
     if (cmfd_run) write(ou,100) "    Solving matrices", &
                   time_cmfdsolve % elapsed
-    write(ou,100) "Total time for finalization", time_finalize % elapsed
-    write(ou,100) "Total time elapsed", time_total % elapsed
+    write(ou,100) "Total time for finalization", time_finalize_elapsed()
+    write(ou,100) "Total time elapsed", time_total_elapsed()
 
     ! Calculate particle rate in active/inactive batches
     n_active = current_batch - n_inactive
     if (restart_run) then
       if (restart_batch < n_inactive) then
         speed_inactive = real(n_particles * (n_inactive - restart_batch) * &
-             gen_per_batch) / time_inactive % elapsed
+             gen_per_batch) / time_inactive_elapsed()
         speed_active = real(n_particles * n_active * gen_per_batch) / &
-             time_active % elapsed
+             time_active_elapsed()
       else
         speed_inactive = ZERO
         speed_active = real(n_particles * (n_batches - restart_batch) * &
-             gen_per_batch) / time_active % elapsed
+             gen_per_batch) / time_active_elapsed()
       end if
     else
       if (n_inactive > 0) then
         speed_inactive = real(n_particles * n_inactive * gen_per_batch) / &
-             time_inactive % elapsed
+             time_inactive_elapsed()
       end if
       speed_active = real(n_particles * n_active * gen_per_batch) / &
-           time_active % elapsed
+           time_active_elapsed()
     end if
 
     ! display calculation rate
@@ -566,7 +492,7 @@ contains
 ! leakage rate.
 !===============================================================================
 
-  subroutine print_results()
+  subroutine print_results() bind(C)
 
     integer :: n       ! number of realizations
     real(8) :: alpha   ! significance level for CI
@@ -633,7 +559,7 @@ contains
 ! tallies and their standard deviations
 !===============================================================================
 
-  subroutine write_tallies()
+  subroutine write_tallies() bind(C)
 
     integer :: i            ! index in tallies array
     integer :: j            ! level in tally hierarchy

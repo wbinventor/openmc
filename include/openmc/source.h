@@ -17,6 +17,18 @@
 namespace openmc {
 
 //==============================================================================
+// Global variables
+//==============================================================================
+
+class SourceDistribution;
+
+namespace model {
+
+extern std::vector<SourceDistribution> external_sources;
+
+} // namespace model
+
+//==============================================================================
 //! External source distribution
 //==============================================================================
 
@@ -41,12 +53,6 @@ private:
 };
 
 //==============================================================================
-// Global variables
-//==============================================================================
-
-extern std::vector<SourceDistribution> external_sources;
-
-//==============================================================================
 // Functions
 //==============================================================================
 
@@ -57,6 +63,9 @@ extern "C" void initialize_source();
 //! source strength
 //! \return Sampled source site
 extern "C" Bank sample_external_source();
+
+//! Fill source bank at end of generation for fixed source simulations
+void fill_source_bank_fixedsource();
 
 } // namespace openmc
 

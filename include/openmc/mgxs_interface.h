@@ -7,6 +7,7 @@
 #include "hdf5_interface.h"
 #include "mgxs.h"
 
+#include <vector>
 
 namespace openmc {
 
@@ -14,12 +15,16 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
+namespace data {
+
 extern std::vector<Mgxs> nuclides_MG;
 extern std::vector<Mgxs> macro_xs;
 extern "C" int num_energy_groups;
+extern std::vector<double> energy_bins;
+extern std::vector<double> energy_bin_avg;
+extern std::vector<double> rev_energy_bins;
 
-//TODO: When more of the Fortran is converted (input_xml, tallies, etc, also
-// bring over energy_bin_avg, energy_bins, etc, as vectors)
+} // namespace data
 
 //==============================================================================
 // Mgxs data loading interface methods
@@ -38,6 +43,8 @@ extern "C" void
 create_macro_xs_c(const char* mat_name, int n_nuclides, const int i_nuclides[],
      int n_temps, const double temps[], const double atom_densities[],
      double tolerance, int& method);
+
+extern "C" void read_mg_cross_sections_header_c(hid_t file_id);
 
 //==============================================================================
 // Mgxs tracking/transport/tallying interface methods

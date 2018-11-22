@@ -131,7 +131,7 @@ elseif(CMAKE_Fortran_COMPILER_ID STREQUAL Intel)
   # Intel compiler options
   list(APPEND f90flags -fpp -std08 -assume byterecl -traceback)
   if(debug)
-    list(APPEND f90flags -g -warn -ftrapuv -fp-stack-check
+    list(APPEND f90flags -g -warn -fp-stack-check
       "-check all" -fpe0 -O0)
     list(APPEND ldflags -g)
   endif()
@@ -344,9 +344,6 @@ add_library(libopenmc SHARED
   src/photon_physics.F90
   src/physics_common.F90
   src/physics.F90
-  src/plot.F90
-  src/plot_header.F90
-  src/progress_header.F90
   src/pugixml/pugixml_f.F90
   src/random_lcg.F90
   src/reaction_header.F90
@@ -373,7 +370,6 @@ add_library(libopenmc SHARED
   src/tallies/tally_derivative_header.F90
   src/tallies/tally_filter.F90
   src/tallies/tally_filter_header.F90
-  src/tallies/tally_filter_cpp.F90
   src/tallies/tally_filter_delayedgroup.F90
   src/tallies/tally_filter_distribcell.F90
   src/tallies/tally_filter_energy.F90
@@ -388,6 +384,7 @@ add_library(libopenmc SHARED
   src/dagmc.cpp
   src/cell.cpp
   src/cmfd_execute.cpp
+  src/cross_sections.cpp
   src/distribution.cpp
   src/distribution_angle.cpp
   src/distribution_energy.cpp
@@ -415,6 +412,7 @@ add_library(libopenmc SHARED
   src/physics_mg.cpp
   src/plot.cpp
   src/position.cpp
+  src/progress_bar.cpp
   src/pugixml/pugixml_c.cpp
   src/random_lcg.cpp
   src/reaction.cpp
@@ -428,7 +426,7 @@ add_library(libopenmc SHARED
   src/simulation.cpp
   src/source.cpp
   src/state_point.cpp
-  src/string_functions.cpp
+  src/string_utils.cpp
   src/summary.cpp
   src/surface.cpp
   src/tallies/filter.cpp
@@ -436,13 +434,16 @@ add_library(libopenmc SHARED
   src/tallies/filter_cellborn.cpp
   src/tallies/filter_cellfrom.cpp
   src/tallies/filter_cell.cpp
+  src/tallies/filter_delayedgroup.cpp
   src/tallies/filter_distribcell.cpp
   src/tallies/filter_energyfunc.cpp
+  src/tallies/filter_energy.cpp
   src/tallies/filter_legendre.cpp
   src/tallies/filter_material.cpp
   src/tallies/filter_mesh.cpp
   src/tallies/filter_meshsurface.cpp
   src/tallies/filter_mu.cpp
+  src/tallies/filter_particle.cpp
   src/tallies/filter_polar.cpp
   src/tallies/filter_sph_harm.cpp
   src/tallies/filter_sptl_legendre.cpp

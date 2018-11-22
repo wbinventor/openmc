@@ -19,11 +19,12 @@ namespace openmc {
 class Nuclide;
 extern std::vector<Nuclide*> nuclides;
 
+namespace data {
+
 // Minimum/maximum transport energy for each particle type. Order corresponds to
 // that of the ParticleType enum
 extern std::array<double, 2> energy_min;
 extern std::array<double, 2> energy_max;
-
 
 class Nuclide
 {
@@ -39,8 +40,9 @@ public:
 
   explicit Nuclide(pugi::xml_node nuclide_node);
 
-}
+};
 
+} // namespace data
 
 //===============================================================================
 //! Cached microscopic cross sections for a particular nuclide at the current

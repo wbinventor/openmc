@@ -29,7 +29,7 @@ constexpr int VERSION_RELEASE {0};
 constexpr std::array<int, 3> VERSION {VERSION_MAJOR, VERSION_MINOR, VERSION_RELEASE};
 
 // HDF5 data format
-constexpr int HDF5_VERSION[] {1, 0};
+constexpr int HDF5_VERSION[] {2, 0};
 
 // Version numbers for binary files
 constexpr std::array<int, 2> VERSION_PARTICLE_RESTART {2, 0};
@@ -424,6 +424,7 @@ constexpr int DIFF_NUCLIDE_DENSITY {2};
 constexpr int DIFF_TEMPERATURE {3};
 
 constexpr int C_NONE {-1};
+constexpr int F90_NONE {0}; //TODO: replace usage of this with C_NONE
 
 // Interpolation rules
 enum class Interpolation {
